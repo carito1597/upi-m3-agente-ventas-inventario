@@ -1,0 +1,40 @@
+
+--- CASO 1 ---
+Consulta: ¿Tienes blusas negras talla M?
+Herramientas: ['buscar_productos']
+Respuesta: ¡Claro! Tenemos la siguiente blusa negra en talla **M** disponible:
+
+| ID | Nombre | Categoría | Talla | Color | Precio | Stock |
+|----|--------|-----------|-------|-------|--------|-------|
+| ROP001 | Blusa casual | Blusas | M | Negro | Bs. 50.00 | 8 unidades |
+
+Si deseas realizar una compra, dime en qué ciudad te encuentras para verificar la cobertura de envío y los tiempos de entrega.
+Evaluación: CORRECTO
+
+--- CASO 2 ---
+Consulta: Busca un vestido rojo talla M y verifica si hay 2 unidades.
+Herramientas: ['buscar_productos', 'consultar_stock']
+Respuesta: ¡Claro! El vestido rojo talla M que buscas está disponible. Tenemos 3 unidades en stock, por lo que puedes solicitar 2 sin problema. ¿Te gustaría que te ayude con el proceso de compra o necesitas más información sobre el producto?
+Evaluación: CORRECTO
+
+--- CASO 3 ---
+Consulta: Busca la ciudad de Cochabamba en Bolivia.
+Herramientas: ['consultar_destino']
+Respuesta: Parece que la búsqueda devolvió varias coincidencias para “Cochabamba” en diferentes departamentos. ¿Podrías especificar a cuál te refieres? Por ejemplo, ¿la ciudad de Cochabamba en el Departamento de Cochabamba, o alguna otra localidad con el mismo nombre?
+Evaluación: CORRECTO
+
+--- CASO 4 ---
+Consulta: ¿Hay una chaqueta denim talla S disponible?
+Herramientas: ['buscar_productos']
+Respuesta: Lo siento, pero la **chaqueta denim talla S** está agotada en este momento. Si deseas, puedo buscar otra talla o color disponible, o mantenerte informado cuando vuelva a estar en stock. ¿Te gustaría que haga alguna otra búsqueda?
+Evaluación: CORRECTO
+
+--- CASO 5 ---
+Consulta: ¿Tienes zapatos deportivos talla M?
+Herramientas: ['buscar_productos']
+Respuesta: Lo siento, pero no tenemos zapatos deportivos en talla M en nuestro catálogo actual. ¿Te interesaría revisar otras tallas o algún otro tipo de calzado?
+Evaluación: CORRECTO
+
+=== RESULTADO FINAL ===
+Aciertos: 5/5
+Porcentaje: 100%
