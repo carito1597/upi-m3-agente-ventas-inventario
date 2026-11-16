@@ -229,11 +229,89 @@ Para observar también argumentos y resultados completos de herramientas:
 python pruebas.py --detalle
 ```
 
-La ejecución manual compartida el **16 de noviembre de 2026**, iniciada a las **15:49:44 UTC**, obtuvo **5 aprobados de 5: 100 %**, incluido el error esperado. Este dato corresponde a esa ejecución, no garantiza resultados futuros. El formato del resumen se mejoró posteriormente para destacar el caso de error; esa mejora no representa otra ejecución real.
-
 El porcentaje mide selección de herramientas, finalización técnica y las comprobaciones específicas del error esperado. No valida exhaustivamente todas las respuestas; la comprobación del texto del error es heurística. Por ejemplo, una consulta geográfica puede aprobar por usar la herramienta aunque la respuesta no aclare cuál de varias localidades encontradas interesa.
 
 La evaluación solo muestra resultados en terminal: no crea informes, carpetas ni modifica este README. Para presentarla, conserva una captura o grabación de la ejecución completa. El programa devuelve código 0 si todos los casos aprueban y 1 si hay fallos.
+
+### 8.1. Evidencias de las respuestas y la evaluación
+
+Las siguientes capturas mostrarán la salida real de `python pruebas.py`. Para cada caso debe verse la **pregunta, la respuesta del agente, la tabla de herramientas y el resultado**. Conserva también los casos fallidos si aparecen.
+
+Los espacios se encuentran pendientes hasta incorporar las imágenes. Las capturas y el resumen deben corresponder a la misma ejecución; el resultado que muestran es el que se presenta como evidencia.
+
+#### Caso 1. Búsqueda de blusa
+
+**Consulta:** ¿Tienen blusas negras talla M?
+
+**Respuesta y resultado en terminal:**
+
+_Pendiente de incorporar la captura._
+
+<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
+![Caso 1: Búsqueda de blusa](evidencias/caso_01_blusa.png)
+-->
+
+#### Caso 2. Disponibilidad de dos vestidos
+
+**Consulta:** ¿Tienen dos vestidos rojos talla M disponibles?
+
+**Respuesta y resultado en terminal:**
+
+_Pendiente de incorporar la captura._
+
+<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
+![Caso 2: Disponibilidad de dos vestidos](evidencias/caso_02_vestidos.png)
+-->
+
+#### Caso 3. Consulta de localidad
+
+**Consulta:** Busca la ciudad de Cochabamba en Bolivia.
+
+**Respuesta y resultado en terminal:**
+
+_Pendiente de incorporar la captura._
+
+<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
+![Caso 3: Consulta de localidad](evidencias/caso_03_localidad.png)
+-->
+
+#### Caso 4. Búsqueda sin coincidencias
+
+**Consulta:** ¿Tienen zapatos deportivos talla M?
+
+**Respuesta y resultado en terminal:**
+
+_Pendiente de incorporar la captura._
+
+<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
+![Caso 4: Búsqueda sin coincidencias](evidencias/caso_04_sin_coincidencias.png)
+-->
+
+#### Caso 5. Error esperado: producto inexistente
+
+**Consulta:** Consulta si hay una unidad del producto ROP999.
+
+Incluye en la evidencia el mensaje real `ERROR: Producto inexistente` y la explicación del agente. Si ese dato solo aparece en el resumen, puede verse en la captura del apartado siguiente. Que el caso apruebe significa que manejó correctamente el error esperado.
+
+**Respuesta y resultado en terminal:**
+
+_Pendiente de incorporar la captura._
+
+<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
+![Caso 5: Error esperado: producto inexistente](evidencias/caso_05_error.png)
+-->
+
+#### Resumen de los cinco casos
+
+La captura debe mostrar la tabla con **caso, tipo de caso y resultado**, el apartado **CASO DE ERROR EVALUADO**, y el **total de aprobados, fallidos y porcentaje calculado**. Si no cabe de forma legible en una imagen, utiliza dos capturas consecutivas.
+
+**Resumen y porcentaje en terminal:**
+
+_Pendiente de incorporar la captura._
+
+<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
+![Resumen de la evaluación y manejo del error esperado](evidencias/resumen_evaluacion.png)
+-->
 
 ## 9. Archivos del proyecto
 

@@ -43,9 +43,24 @@ Si una herramienta devuelve un mensaje que comienza con ERROR:, explica
 brevemente el problema en español, sin inventar resultados ni presentarlo como
 una búsqueda sin coincidencias o como falta de stock.
 Los productos agotados y las búsquedas sin coincidencias son resultados normales.
-Solicita aclaraciones cuando falte información indispensable, cuando no puedas
-identificar el producto o cuando haya varias ciudades posibles. No supongas
-la talla, el color, la cantidad ni la ciudad si son necesarios para responder.
+Busca productos con los datos que el usuario ya proporcionó. Nombre, talla y
+color son filtros opcionales de buscar_productos: no exijas los tres para
+iniciar una búsqueda. Si pregunta por un tipo de producto, busca ese tipo
+antes de solicitar más detalles, aunque parezca ajeno al catálogo de ropa.
+Interpreta errores ortográficos evidentes y busca el nombre del producto sin
+palabras de relleno; por ejemplo, "juegutes de nino" se busca como "juguete".
+Si la búsqueda no devuelve coincidencias, indica que no encontraste ese
+producto en nuestro catálogo y ofrece buscar otra prenda. No inventes
+alternativas ni pidas talla o color para continuar buscando ese producto
+sin coincidencias. Esto no equivale a un error técnico ni a falta de stock.
+Si un producto sí aparece pero tiene stock cero, explica que está agotado;
+no digas que no existe. Si hay varias coincidencias, pide solo el detalle
+necesario para identificar cuál interesa, cuando sea indispensable.
+No afirmes ni sugieras que tenemos un producto disponible antes de comprobarlo.
+Solo solicita aclaraciones si la pregunta no permite iniciar una búsqueda,
+si los resultados son ambiguos para la acción solicitada o si falta un dato
+indispensable para verificar la disponibilidad. No supongas talla, color ni
+cantidad. Cuando haya varias ciudades posibles, solicita aclaración.
 """
 
 # Crear agente ReAct
