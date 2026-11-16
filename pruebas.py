@@ -1,223 +1,249 @@
-"""Diez casos de integración ejecutados con el agente real."""
-
-import json
+"""Lee casos.json y evalúa al agente real en terminal, sin guardar informes."""
+import argparse
 from datetime import datetime, timezone
+import json
+import os
 from pathlib import Path
+import re
+import sys
 
-from langchain_core.messages import AIMessage, ToolMessage
-from catalogo import catalogo
+BASE = Path(__file__).resolve().parent
 
-
-casos = [
-    {
-        "consulta": "¿Tienes blusas negras talla M?",
-        "debe_usar": ["buscar_productos"],
-        "no_debe_usar": ["consultar_destino"],
-        "esperado": {"herramienta": "buscar_productos", "producto_id": "ROP001"},
-    },
-    {
-        "consulta": "Busca un vestido rojo talla M y verifica si hay 2 unidades.",
-        "debe_usar": ["buscar_productos", "consultar_stock"],
-        "no_debe_usar": ["consultar_destino"],
-        "esperado": {"herramienta": "consultar_stock", "argumentos": {"producto_id": "ROP004", "cantidad": 2}, "resultado": {"stock": 3, "cantidad_solicitada": 2, "disponible": True}},
-    },
-    {
-        "consulta": "Busca la ciudad de Cochabamba en Bolivia.",
-        "debe_usar": ["consultar_destino"],
-        "no_debe_usar": ["consultar_stock"],
-        "esperado": {"herramienta": "consultar_destino", "argumentos": {"ciudad": "Cochabamba"}, "ciudad": "Cochabamba"},
-    },
-    {
-        "consulta": "¿Hay una chaqueta denim talla S disponible?",
-        "debe_usar": ["buscar_productos"],
-        "no_debe_usar": ["consultar_destino"],
-        "esperado": {"herramienta": "buscar_productos", "producto_id": "ROP005", "stock": 0},
-    },
-    {
-        "consulta": "¿Tienes zapatos deportivos talla M?",
-        "debe_usar": ["buscar_productos"],
-        "no_debe_usar": ["consultar_destino"],
-        "esperado": {"herramienta": "buscar_productos", "nombre_contiene": "zapato", "resultado": {"productos": []}},
-    },
-    {
-        "consulta": "Busca una camiseta básica blanca talla XS e indica su precio y stock.",
-        "debe_usar": ["buscar_productos"],
-        "no_debe_usar": ["consultar_destino"],
-        "esperado": {"herramienta": "buscar_productos", "producto_id": "ROP006"},
-    },
-    {
-        "consulta": "Consulta el stock del producto ROP004 para 10 unidades. ¿Alcanza?",
-        "debe_usar": ["consultar_stock"],
-        "no_debe_usar": ["consultar_destino"],
-        "esperado": {"herramienta": "consultar_stock", "argumentos": {"producto_id": "ROP004", "cantidad": 10}, "resultado": {"stock": 3, "cantidad_solicitada": 10, "disponible": False}},
-    },
-    {
-        "consulta": "Consulta el stock del producto ROP999 para 1 unidad.",
-        "debe_usar": ["consultar_stock"],
-        "no_debe_usar": ["consultar_destino"],
-        "esperado": {"herramienta": "consultar_stock", "argumentos": {"producto_id": "ROP999"}, "resultado": {"disponible": False}, "error_contiene": "inexistente"},
-    },
-    {
-        "consulta": "Consulta el stock del producto ROP004 con cantidad solicitada igual a 0.",
-        "debe_usar": ["consultar_stock"],
-        "no_debe_usar": ["consultar_destino"],
-        "esperado": {"herramienta": "consultar_stock", "argumentos": {"producto_id": "ROP004", "cantidad": 0}, "resultado": {"disponible": False}, "error_contiene": "cantidad"},
-    },
-    {
-        "consulta": "Busca mediante Open-Meteo la ciudad ZzxqvInventada987654 en Bolivia.",
-        "debe_usar": ["consultar_destino"],
-        "no_debe_usar": ["buscar_productos", "consultar_stock"],
-        "esperado": {"herramienta": "consultar_destino", "argumentos": {"ciudad": "ZzxqvInventada987654"}, "resultado": {"encontrado": False, "ubicaciones": []}},
-    },
-]
+def cargar_casos(ruta):
+    casos = json.loads(ruta.read_text(encoding='utf-8-sig'))
+    if not isinstance(casos, list) or len(casos) != 5:
+        raise ValueError('El archivo debe contener exactamente cinco casos.')
+    herramientas = {'buscar_productos', 'consultar_stock', 'consultar_destino'}
+    for numero, caso in enumerate(casos, 1):
+        if not isinstance(caso, dict) or not isinstance(caso.get('consulta'), str) or not caso['consulta'].strip():
+            raise ValueError(f'Caso {numero}: falta una consulta válida.')
+        for clave in ['debe_usar', 'no_debe_usar']:
+            valores = caso.get(clave)
+            if not isinstance(valores, list) or not all(isinstance(x, str) and x in herramientas for x in valores):
+                raise ValueError(f'Caso {numero}: {clave} debe ser una lista de herramientas válidas.')
+        if set(caso['debe_usar']) & set(caso['no_debe_usar']):
+            raise ValueError(f'Caso {numero}: una herramienta no puede ser obligatoria y prohibida.')
+        if 'error_esperado' in caso and (not isinstance(caso['error_esperado'], str) or not caso['error_esperado'].startswith('ERROR:')):
+            raise ValueError(f'Caso {numero}: el error esperado debe empezar con ERROR:.')
+    if not any(c.get('error_esperado') for c in casos):
+        raise ValueError('Incluye al menos un caso de error esperado.')
+    return casos
 
 
-def registrar_llamadas(mensajes):
-    """Relaciona las llamadas reales con sus resultados mediante tool_call_id."""
-    respuestas = {m.tool_call_id: m for m in mensajes if isinstance(m, ToolMessage)}
+def limpiar(texto):
+    for nombre, valor in os.environ.items():
+        if any(p in nombre.upper() for p in ('KEY', 'TOKEN', 'SECRET', 'PASSWORD')) and len(valor) >= 8:
+            texto = texto.replace(valor, '[OCULTO]')
+    return re.sub(r'\b(?:gsk_|sk-)[A-Za-z0-9_-]+', '[OCULTO]', texto)
+
+def evaluar(caso, llamadas, respuesta, error=None):
+    solicitadas = {c['herramienta'] for c in llamadas}
+    ejecutadas = {c['herramienta'] for c in llamadas if c['recibio_resultado']}
+    motivos = []
+    faltan = set(caso['debe_usar']) - ejecutadas
+    prohibidas = set(caso['no_debe_usar']) & solicitadas
+    if faltan:
+        motivos.append('Faltan herramientas obligatorias ejecutadas: ' + ', '.join(sorted(faltan)))
+    if prohibidas:
+        motivos.append('Se solicitaron herramientas prohibidas: ' + ', '.join(sorted(prohibidas)))
+    for c in llamadas:
+        datos = c['resultado']
+        mensaje = datos.get('mensaje', '') if isinstance(datos, dict) else str(datos)
+        esperado = (caso.get('error_esperado') == mensaje and c['herramienta'] == 'consultar_stock'
+                    and c['argumentos'].get('producto_id', '').strip().upper() == 'ROP999'
+                    and c['argumentos'].get('cantidad', 1) == 1
+                    and isinstance(datos, dict) and datos.get('disponible') is False)
+        if not c['recibio_resultado'] or c.get('estado') == 'error' or (mensaje.startswith('ERROR:') and not esperado):
+            motivos.append('Llamada incompleta o con error: ' + c['herramienta'])
+    if caso.get('error_esperado'):
+        coincide = any(c['recibio_resultado'] and c['herramienta'] == 'consultar_stock'
+            and c['argumentos'].get('producto_id', '').strip().upper() == 'ROP999'
+            and c['argumentos'].get('cantidad', 1) == 1 and isinstance(c['resultado'], dict)
+            and c['resultado'].get('mensaje') == caso['error_esperado']
+            and c['resultado'].get('disponible') is False for c in llamadas)
+        if not coincide:
+            motivos.append('No se obtuvo el error esperado de producto inexistente para ROP999 y cantidad 1.')
+        texto = str(respuesta).casefold()
+        if not re.search(r'inexistente|no existe|no se encontr|no encontr|no est[aá] (?:en|registrado)', texto):
+            motivos.append('La respuesta no comunica explícitamente que el producto no existe o no se encontró.')
+        if re.search(r'agotad|sin stock|sin existencias', texto):
+            motivos.append('La respuesta confunde un producto inexistente con uno agotado.')
+    if not respuesta:
+        motivos.append('No se produjo una respuesta final no vacía.')
+    if error:
+        motivos.append('Error de ejecución: ' + error)
+    return {'estado': 'FALLIDO' if motivos else 'APROBADO', 'motivos': motivos or ['Herramientas obligatorias ejecutadas, ninguna prohibida, respuesta final y ausencia de errores inesperados; error esperado verificado cuando corresponde.']}
+
+def extraer(mensajes):
+    from langchain_core.messages import AIMessage, ToolMessage
+    resultados = {m.tool_call_id: m for m in mensajes if isinstance(m, ToolMessage)}
     llamadas = []
-    for mensaje in mensajes:
-        if not isinstance(mensaje, AIMessage):
-            continue
-        for llamada in mensaje.tool_calls:
-            respuesta = respuestas.get(llamada["id"])
-            contenido = respuesta.content if respuesta is not None else None
-            try:
-                datos = json.loads(contenido) if isinstance(contenido, str) else contenido
-            except (ValueError, TypeError):
-                datos = None
-            llamadas.append({
-                "id": llamada["id"], "herramienta": llamada["name"],
-                "argumentos": llamada["args"], "resultado": contenido,
-                "datos": datos, "estado": getattr(respuesta, "status", None),
-            })
+    for m in mensajes:
+        if isinstance(m, AIMessage):
+            for c in m.tool_calls:
+                r = resultados.get(c['id'])
+                contenido = r.content if r is not None else None
+                try:
+                    contenido = json.loads(contenido) if isinstance(contenido, str) else contenido
+                except ValueError:
+                    pass
+                llamadas.append({'id': c['id'], 'herramienta': c['name'], 'argumentos': c['args'],
+                                 'recibio_resultado': r is not None, 'resultado': contenido,
+                                 'estado': getattr(r, 'status', None)})
     return llamadas
 
+def ejecutar(numero, caso, *, detalle=False, total=None):
+    from langchain_core.messages import AIMessage, ToolMessage
+    mensajes = []
+    registro = {'caso': numero, 'fecha_utc': datetime.now(timezone.utc).isoformat(), **caso,
+                'llamadas': [], 'respuesta': '', 'error': None, 'estado': 'EN CURSO'}
+    titulos = ['Búsqueda de blusa', 'Disponibilidad de dos vestidos', 'Consulta de localidad',
+               'Búsqueda sin coincidencias', 'Producto inexistente']
+    encabezado = f'CASO {numero}'
+    if total is not None:
+        encabezado += f' DE {total}'
+        if 1 <= numero <= len(titulos):
+            encabezado += ' · ' + titulos[numero - 1]
+    print('\n' + encabezado, flush=True)
+    print('─' * 65)
+    print(limpiar('Pregunta:\n' + caso['consulta']), flush=True)
+    if detalle and caso.get('error_esperado'):
+        print('Error esperado: ' + caso['error_esperado'])
+    try:
+        from agente import agente
+        for evento in agente.stream({'messages': [{'role': 'user', 'content': caso['consulta']}]},
+                                    config={'recursion_limit': 15}, stream_mode='updates'):
+            for datos in evento.values():
+                if isinstance(datos, dict):
+                    nuevos = datos.get('messages', [])
+                    for mensaje in nuevos if detalle else []:
+                        if isinstance(mensaje, AIMessage):
+                            for llamada in mensaje.tool_calls:
+                                print(limpiar('SOLICITUD REAL: ' + llamada['name'] + ' | ID: ' + llamada['id']
+                                    + ' | Argumentos: ' + json.dumps(llamada['args'], ensure_ascii=False)), flush=True)
+                        elif isinstance(mensaje, ToolMessage):
+                            print(limpiar('RESULTADO REAL | ID: ' + mensaje.tool_call_id + ' | ' + str(mensaje.content)), flush=True)
+                    mensajes.extend(nuevos)
+                    registro['llamadas'] = extraer(mensajes)
+        final = mensajes[-1] if mensajes else None
+        if isinstance(final, AIMessage) and not final.tool_calls:
+            registro['respuesta'] = final.content
+            if isinstance(final.content, str) and 'Model call limits exceeded' in final.content:
+                registro['error'] = 'El middleware detuvo la ejecución al alcanzar el límite de llamadas al modelo.'
+    except Exception as error:
+        registro['error'] = limpiar(f'{type(error).__name__}: {error}')
+    registro.update(evaluar(caso, registro['llamadas'], registro['respuesta'], registro['error']))
+    print(limpiar('\nRespuesta del agente:\n' + str(registro['respuesta'] or '(sin respuesta final)')), flush=True)
+    ejecutadas = {c['herramienta'] for c in registro['llamadas'] if c['recibio_resultado']}
+    nombres = list(dict.fromkeys(['buscar_productos', 'consultar_stock', 'consultar_destino']
+                                + [c['herramienta'] for c in registro['llamadas']]))
+    print(f'\n{"Herramienta":<23} {"Criterio":<17} ¿Se ejecutó?')
+    print('─' * 55)
+    for nombre in nombres:
+        criterio = ('debe_usar' if nombre in caso['debe_usar'] else
+                    'no_debe_usar' if nombre in caso['no_debe_usar'] else 'opcional')
+        print(f'{nombre:<23} {criterio:<17} {"Sí" if nombre in ejecutadas else "No"}')
+    print('\nResultado: ' + registro['estado'], flush=True)
+    if registro['estado'] == 'FALLIDO':
+        for motivo in registro['motivos']:
+            print(limpiar('Motivo: ' + motivo))
+    elif caso.get('error_esperado'):
+        print('El agente recibió y explicó el error esperado de producto inexistente.')
+    return registro
 
-def evaluar_esperado(esperado, llamadas):
-    candidatas = [c for c in llamadas if c["herramienta"] == esperado["herramienta"]]
-    if not candidatas:
-        return "FALLO", "No se llamó a la herramienta necesaria para comprobar el resultado."
-    motivos = []
-    incierto = False
-    for llamada in candidatas:
-        argumentos = llamada["argumentos"]
-        if any(argumentos.get(k) != v for k, v in esperado.get("argumentos", {}).items()):
-            motivos.append("Los argumentos no corresponden a la consulta esperada.")
+def errores_recibidos(registro):
+    """Obtiene mensajes de error reales, no el texto de los criterios."""
+    errores = []
+    for llamada in registro['llamadas']:
+        if not llamada['recibio_resultado']:
             continue
-        if esperado.get("nombre_contiene", "") not in argumentos.get("nombre", "").casefold():
-            motivos.append("La búsqueda no corresponde al producto solicitado.")
+        datos = llamada['resultado']
+        mensaje = datos.get('mensaje', '') if isinstance(datos, dict) else datos
+        if isinstance(mensaje, str) and mensaje.startswith('ERROR:'):
+            errores.append((llamada['herramienta'], llamada['argumentos'], mensaje))
+    return errores
+
+
+def tipo_caso(registro):
+    if registro.get('error_esperado'):
+        return 'Error esperado'
+    if 'consultar_destino' in registro['debe_usar']:
+        return 'Consulta a API pública'
+    if any(c['recibio_resultado'] and isinstance(c['resultado'], dict)
+           and c['resultado'].get('productos') == [] for c in registro['llamadas']):
+        return 'Búsqueda sin coincidencias'
+    return 'Consulta normal'
+
+
+def mostrar_resumen(filas):
+    aprobados = sum(r['estado'] == 'APROBADO' for r in filas)
+    porcentaje = aprobados / len(filas) * 100
+    print('\n=== RESUMEN ===')
+    print(f'{"Caso":<8} {"Tipo de caso":<29} Resultado')
+    print('─' * 55)
+    for r in filas:
+        print(f'{r["caso"]:<8} {tipo_caso(r):<29} {r["estado"]}')
+    for r in filas:
+        if not r.get('error_esperado'):
             continue
-        datos = llamada["datos"]
-        if not isinstance(datos, dict):
-            incierto = True
-            motivos.append("No hay un resultado estructurado verificable para la llamada.")
-            continue
-        mensaje = datos.get("mensaje", "")
-        if isinstance(mensaje, str) and mensaje.startswith("ERROR:"):
-            if "error_contiene" not in esperado:
-                incierto = True
-                motivos.append("La herramienta devolvió un error: " + mensaje)
-                continue
-        elif "error_contiene" in esperado:
-            motivos.append("No se devolvió el ERROR: esperado.")
-            continue
-        if "error_contiene" in esperado and esperado["error_contiene"] not in mensaje.casefold():
-            motivos.append("El error no corresponde a la condición esperada.")
-            continue
-        if any(type(datos.get(k)) is not type(v) or datos.get(k) != v for k, v in esperado.get("resultado", {}).items()):
-            motivos.append("El resultado no cumple los valores esperados.")
-            continue
-        if "producto_id" in esperado:
-            producto = next(p for p in catalogo if p["id"] == esperado["producto_id"])
-            if producto not in datos.get("productos", []):
-                motivos.append("No se encontró el producto con sus datos del catálogo.")
-                continue
-            if "stock" in esperado and producto["stock"] != esperado["stock"]:
-                motivos.append("El producto no tiene el stock esperado.")
-                continue
-        if "ciudad" in esperado:
-            ubicaciones = datos.get("ubicaciones")
-            if datos.get("encontrado") is not True or not isinstance(ubicaciones, list) or not any(
-                isinstance(u, dict) and u.get("ciudad", "").casefold() == esperado["ciudad"].casefold()
-                for u in ubicaciones
-            ):
-                motivos.append("La API no devolvió la localidad esperada.")
-                continue
-        return "OK", "El resultado real de la herramienta cumple la condición esperada."
-    return ("NO VERIFICABLE" if incierto else "FALLO"), " ".join(dict.fromkeys(motivos))
+        print(f'\nCASO DE ERROR EVALUADO: {r["caso"]}')
+        print(limpiar('  Pregunta: ' + r['consulta']))
+        print(limpiar('  Error esperado: ' + r['error_esperado']))
+        errores = errores_recibidos(r)
+        if errores:
+            for herramienta, argumentos, mensaje in errores:
+                print('  Herramienta: ' + herramienta)
+                print(limpiar('  Argumentos: ' + json.dumps(argumentos, ensure_ascii=False)))
+                print(limpiar('  Error recibido: ' + mensaje))
+        else:
+            print('  Error recibido: ninguno registrado; el error esperado no se ha demostrado.')
+        print(limpiar('  Respuesta del agente: ' + str(r['respuesta'] or '(sin respuesta final)')))
+        if r['estado'] == 'APROBADO' and any(e[2] == r['error_esperado'] for e in errores):
+            print('  Manejo del error: CORRECTO según los criterios automáticos.')
+        else:
+            print('  Manejo del error: NO VERIFICADO como correcto; revisa los motivos del caso.')
+    print(f'\nAprobados: {aprobados}/{len(filas)} | Fallidos: {len(filas)-aprobados}')
+    print(f'Cumplimiento: {aprobados} / {len(filas)} × 100 = {porcentaje:.1f} %')
+    print('APROBADO significa que cumplió los criterios; un error esperado bien manejado también aprueba.')
+    return 0 if aprobados == len(filas) else 1
 
 
 def main():
-    ruta = Path(__file__).with_name("resultados_pruebas.txt")
-    filas = []
-    # Importar este módulo no crea el agente ni ejecuta consultas.
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--detalle', action='store_true', help='Mostrar llamadas, argumentos y resultados completos')
+    parser.add_argument('--casos', type=Path, default=BASE/'casos.json')
+    parser.add_argument('--ver-casos', action='store_true', help='Mostrar preguntas y criterios sin consumir API')
+    parser.add_argument('--ejecutar', action='store_true', help='Ejecutar; pide confirmación si falta --autorizar-api')
+    parser.add_argument('--autorizar-api', action='store_true', help='Confirmar consumo de Groq sin pregunta interactiva')
+    args = parser.parse_args()
     try:
-        from agente import agente
-        error_inicio = None
-    except Exception as error:
-        agente = None
-        error_inicio = f"{type(error).__name__}: {error}"
+        casos = cargar_casos(args.casos)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
+    if args.ver_casos:
+        for n, caso in enumerate(casos, 1):
+            print(f'Caso {n}: ' + caso['consulta'])
+            print('  debe_usar: ' + ', '.join(caso['debe_usar']))
+            print('  no_debe_usar: ' + ', '.join(caso['no_debe_usar']))
+            if caso.get('error_esperado'):
+                print('  error_esperado: ' + caso['error_esperado'])
+        return 0
+    if not args.autorizar_api:
+        try:
+            respuesta = input('Se ejecutarán cinco consultas reales con Groq y pueden consumir créditos. ¿Continuar? [s/N]: ')
+        except (EOFError, KeyboardInterrupt):
+            respuesta = ''
+        if respuesta.strip().casefold() not in ['s', 'si', 'sí']:
+            print('Cancelado. No se ejecutaron consultas ni se calculó un porcentaje.')
+            return 0
+    from dotenv import load_dotenv
+    load_dotenv(BASE/'.env')
+    print('EVALUACIÓN REAL - ' + datetime.now(timezone.utc).isoformat(), flush=True)
+    print('Cada caso inicia una consulta nueva. Se evalúan herramientas y errores esperados; no toda la calidad semántica de las respuestas.')
+    filas = [ejecutar(n, caso, detalle=args.detalle, total=len(casos)) for n, caso in enumerate(casos, 1)]
+    return mostrar_resumen(filas)
 
-    with ruta.open("w", encoding="utf-8") as archivo:
-        def emitir(texto=""):
-            print(texto, flush=True)
-            archivo.write(texto + chr(10))
-            archivo.flush()
-
-        emitir("EVALUACIÓN REAL DEL AGENTE - " + datetime.now(timezone.utc).isoformat())
-        emitir("Se evalúan selección y resultados de herramientas; no la exactitud semántica integral de la respuesta final.")
-        for numero, caso in enumerate(casos, 1):
-            emitir(f"--- CASO {numero} ---")
-            emitir("Consulta: " + caso["consulta"])
-            emitir("Debe usar: " + ", ".join(caso["debe_usar"]))
-            emitir("No debe usar: " + ", ".join(caso["no_debe_usar"]))
-            emitir("Condición esperada: " + json.dumps(caso["esperado"], ensure_ascii=False))
-            seleccion = cumplimiento = general = "NO VERIFICABLE"
-            try:
-                if error_inicio:
-                    raise RuntimeError(error_inicio)
-                resultado = agente.invoke(
-                    {"messages": [{"role": "user", "content": caso["consulta"]}]},
-                    config={"recursion_limit": 15},
-                )
-                mensajes = resultado["messages"]
-                llamadas = registrar_llamadas(mensajes)
-                utilizadas = {c["herramienta"] for c in llamadas}
-                seleccion = "OK" if (set(caso["debe_usar"]) <= utilizadas and not set(caso["no_debe_usar"]) & utilizadas) else "FALLO"
-                for llamada in llamadas:
-                    emitir("Llamada real: " + json.dumps(llamada, ensure_ascii=False, default=str))
-                if not llamadas:
-                    emitir("Sin llamadas a herramientas registradas.")
-                cumplimiento, motivo = evaluar_esperado(caso["esperado"], llamadas)
-                final = mensajes[-1] if mensajes else None
-                emitir("Respuesta final: " + str(getattr(final, "content", "")))
-                if not isinstance(final, AIMessage) or final.tool_calls or not final.content:
-                    cumplimiento = "FALLO"
-                    motivo += " No se produjo una respuesta final del agente."
-                if seleccion == "FALLO" or cumplimiento == "FALLO":
-                    general = "FALLO"
-                elif cumplimiento == "OK":
-                    general = "OK"
-            except Exception as error:
-                motivo = f"Ejecución no verificable: {type(error).__name__}: {error}. No se dispone de una traza completa de llamadas."
-            emitir(f"Selección: {seleccion} | Resultado esperado: {cumplimiento} | General: {general}")
-            emitir("Motivo: " + motivo)
-            filas.append((numero, seleccion, cumplimiento, general))
-
-        emitir("=== TABLA RESUMEN ===")
-        emitir(f"{'Caso':<6} | {'Selección':<15} | {'Resultado esperado':<18} | {'General':<15}")
-        for numero, seleccion, cumplimiento, general in filas:
-            emitir(f"{numero:<6} | {seleccion:<15} | {cumplimiento:<18} | {general:<15}")
-        for indice, etiqueta in [(1, "Selección"), (2, "Resultado esperado"), (3, "General")]:
-            aciertos = sum(f[indice] == "OK" for f in filas)
-            fallos = sum(f[indice] == "FALLO" for f in filas)
-            no_verificables = sum(f[indice] == "NO VERIFICABLE" for f in filas)
-            emitir(f"{etiqueta}: {aciertos}/{len(filas)} = {aciertos / len(filas) * 100:.1f}% de cumplimiento; {fallos} fallos; {no_verificables} no verificables.")
-        emitir("Los porcentajes usan los diez casos como denominador; los no verificables no cuentan como aciertos.")
-        emitir("Resultados guardados en: " + str(ruta))
-    return 0 if all(f[3] == "OK" for f in filas) else 1
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

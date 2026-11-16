@@ -1,118 +1,108 @@
-# Agente inteligente de ventas e inventario para una tienda de ropa
+# Agente de ventas e inventario para una tienda de ropa
 
-**Módulo 3 – Diseño y Orquestación de Agentes Inteligentes**  
-**Integrante:** Carolina Andrea Villalobos Montaño  
-**Repositorio:** [upi-m3-agente-ventas-inventario](https://github.com/carito1597/upi-m3-agente-ventas-inventario)
+Proyecto del Módulo 3: Diseño y Orquestación de Agentes Inteligentes.
 
-## 1. Problema, usuarios y alcance
+Asistente en español que consulta un catálogo simulado de ropa, verifica disponibilidad y busca localidades bolivianas. Utiliza LangChain con el modelo `openai/gpt-oss-20b`, servido por Groq.
 
-Vendedores y propietarios de pequeñas tiendas de ropa necesitan consultar productos, precios y existencias con rapidez para atender a sus clientes. Este prototipo permite hacer esas consultas en lenguaje natural y buscar localidades bolivianas mediante una API pública.
+## 1. Problema y usuario
 
-El catálogo contiene **15 prendas exclusivamente simuladas**, con identificadores `ROP001` a `ROP015`, precios en bolivianos (Bs) y stock entero no negativo. Incluye productos agotados (`ROP005`, `ROP009` y `ROP013`). No representa el inventario de una tienda real.
+En una tienda de ropa, atender una pregunta como «¿Tienen dos vestidos rojos talla M?» exige identificar la prenda y comprobar si las existencias alcanzan. Buscar estos datos manualmente durante cada conversación puede demorar la atención y provocar errores.
 
-El agente solo consulta información: no registra compras, procesa pagos, reserva productos, modifica inventario, notifica reposiciones ni gestiona envíos. Encontrar una localidad no confirma cobertura de envío.
+El usuario principal es el vendedor o encargado de una pequeña tienda, que necesita consultar productos, precios y cantidades mediante preguntas cotidianas. El agente también permite buscar una localidad cuando surge una consulta sobre una ciudad boliviana.
 
-## 2. Arquitectura ReAct y justificación
+El prototipo trabaja con **15 prendas simuladas**, con códigos de `ROP001` a `ROP015` y precios en bolivianos (Bs). No representa un inventario comercial real. Sus herramientas son de lectura: no registra ventas, descuenta existencias, reserva prendas ni procesa pagos. Encontrar una localidad tampoco confirma cobertura de envío.
 
-Se utiliza `create_agent` de LangChain, sobre LangGraph, con el modelo `openai/gpt-oss-20b` servido por Groq. El agente interpreta la consulta, elige una herramienta, observa su resultado y decide si necesita otra consulta o si puede responder.
+## 2. Por qué es un agente
 
-ReAct resulta adecuado porque las preguntas requieren recorridos diferentes: buscar una prenda, comprobar una cantidad o consultar una ciudad. Una verificación de disponibilidad puede necesitar primero identificar el producto y después consultar su stock. Un workflow sería útil para una secuencia fija; aquí exigiría definir ramas explícitas para cada recorrido. La flexibilidad de ReAct implica que la selección de herramientas y las respuestas requieren evaluación y límites de ejecución.
+Es un **agente con herramientas** porque el modelo interpreta cada pregunta y decide qué herramienta utilizar, con qué argumentos y si necesita otra consulta antes de responder.
+
+Por ejemplo, ante una solicitud de dos vestidos puede buscar primero la prenda, obtener su código y después consultar la disponibilidad para esa cantidad. Ante una pregunta sobre Cochabamba, puede utilizar directamente la herramienta de localidades.
+
+Un workflow establecería de antemano una secuencia fija o ramas programadas para cada situación. Aquí el recorrido depende de las decisiones del modelo y de los resultados que recibe. El patrón es de tipo ReAct: decidir una acción, ejecutar una herramienta, observar su resultado y continuar hasta responder o alcanzar un límite.
+
+## 3. Arquitectura
 
 ```mermaid
 flowchart TD
-    U[Usuario] --> A[Agente ReAct: LangChain y LangGraph]
-    A --> M[Modelo Groq: openai/gpt-oss-20b]
-    M --> D{Responder o consultar}
+    U[Usuario: pregunta en lenguaje natural] --> CLI[Terminal: agente.py]
+    CLI --> A[Agente: orquestación con LangChain y LangGraph]
+    I[Instrucciones del sistema] -.-> A
+    E[Estado y mensajes de la consulta] <--> A
+    A --> M[Modelo en Groq: openai/gpt-oss-20b]
+    L[Control: límite de llamadas al modelo] -.-> M
+    M --> D{Decisión del modelo}
     D -->|Buscar prendas| B[buscar_productos]
     D -->|Verificar cantidad| S[consultar_stock]
     D -->|Buscar localidad| G[consultar_destino]
-    C[Catálogo simulado: 15 productos] --> B
-    C --> S
-    O[API pública Open-Meteo] --> G
-    B -->|Resultado observado| A
-    S -->|Resultado observado| A
-    G -->|Resultado observado| A
-    D -->|Respuesta final| R[Respuesta en español]
-    R --> U
-    L[ModelCallLimitMiddleware: 5 por defecto] -.-> A
+    B --> C[Catálogo local simulado]
+    S --> C
+    C -->|Datos de productos| B
+    C -->|Existencias| S
+    G --> O[API pública de Open-Meteo]
+    O -->|Localidades o error| G
+    B -->|Resultado| A
+    S -->|Resultado| A
+    G -->|Resultado| A
+    D -->|Responder| R[Respuesta final en español]
+    R --> CLI
+    CLI -->|Muestra la respuesta| U
 ```
 
-Las flechas de retorno representan el ciclo de consulta. El diagrama describe la orquestación, sin exponer razonamiento interno del modelo.
+Las herramientas devuelven sus resultados al agente para que el modelo decida el siguiente paso. El estado se mantiene durante esa consulta; cada nueva ejecución comienza sin el historial anterior. El límite de llamadas puede detener el recorrido antes de completar la respuesta.
 
-## 3. Las cinco primitivas
+## 4. Herramientas y fuentes de información
 
-| Primitiva | Implementación actual | Evidencia |
-|---|---|---|
-| Instrucciones | System prompt: español breve, herramientas antes de informar datos, precios en Bs, aclaraciones y prohibición de prometer operaciones no disponibles. | [agente.py](agente.py), variable `instrucciones`. |
-| Herramientas | Búsqueda de prendas, consulta de disponibilidad y geocodificación de ciudades. | [herramientas.py](herramientas.py), tres funciones con `@tool`. |
-| Memoria | Historial de mensajes y resultados durante una invocación. No hay memoria persistente entre ejecuciones. | Mensajes enviados a `agente.invoke()` y devueltos por el agente. |
-| Estado | Mensajes del usuario, `AIMessage` con llamadas y argumentos, y `ToolMessage` con resultados. | [pruebas.py](pruebas.py), función `registrar_llamadas`. |
-| Control | `ModelCallLimitMiddleware` con límite por ejecución y `recursion_limit=15` para los pasos del grafo. | [agente.py](agente.py) y [evidencia_control.txt](evidencia_control.txt). |
+Las tres herramientas están definidas en [herramientas.py](herramientas.py).
 
-## 4. Contratos de herramientas
-
-Todas las herramientas son de lectura. Las respuestas normales son diccionarios; los errores de validación de argumentos del decorador pueden devolver directamente el texto `ERROR: Argumentos inválidos para la herramienta`.
-
-| Nombre y propósito | Parámetros | Resultado normal | Manejo de errores |
+| Herramienta | Entrada | Información que devuelve | Fuente |
 |---|---|---|---|
-| `buscar_productos`: filtra el catálogo. | `nombre: str = ""`, `talla: str = ""`, `color: str = ""`. Los filtros vacíos no restringen la búsqueda. | `productos`: lista de prendas con `id`, `nombre`, `categoria`, `talla`, `color`, `precio` y `stock`; `mensaje`: coincidencias encontradas o sin coincidencias. | Filtros inválidos: lista vacía y `mensaje` con `ERROR:`. Una búsqueda sin coincidencias no es un error. |
-| `consultar_stock`: compara la cantidad solicitada con las existencias sin modificarlas. | `producto_id: str` obligatorio; `cantidad: int = 1`. Se normalizan espacios externos y mayúsculas del ID. | `producto`, `stock`, `cantidad_solicitada`, `disponible` booleano. | Cantidad no positiva, ID vacío o inexistente: `disponible: false` y `mensaje` con `ERROR:`. Stock cero o insuficiente es un resultado normal. |
-| `consultar_destino`: busca localidades bolivianas. | `ciudad: str` obligatorio, al menos dos caracteres tras quitar espacios externos. | `encontrado`, `ubicaciones` con `ciudad` y `departamento`, y `fuente: "Open-Meteo"`. Si falta el departamento se usa `No indicado`. | Ciudad inválida, timeout, error HTTP, conexión, JSON inválido o estructura inesperada: `encontrado: false` y `mensaje` con `ERROR:`. Sin coincidencias devuelve una lista vacía, sin error. |
+| `buscar_productos` | Nombre, talla y color; filtros opcionales. | Prendas coincidentes con código, precio y stock. | [catalogo.py](catalogo.py). |
+| `consultar_stock` | Código del producto y cantidad; por defecto, una unidad. | Existencias y si alcanzan para la cantidad solicitada. | [catalogo.py](catalogo.py). |
+| `consultar_destino` | Nombre de una ciudad. | Hasta cinco localidades bolivianas coincidentes y sus departamentos. | API pública de geocodificación de Open-Meteo. |
 
-La búsqueda normaliza mayúsculas, tildes y espacios, y reconoce variantes sencillas de singular/plural y algunos colores en femenino. Es una normalización heurística, no un analizador lingüístico completo. Los datos originales del catálogo no se alteran.
+La búsqueda de productos normaliza mayúsculas, tildes y algunas variantes de plurales y colores; no comprende todos los sinónimos. La consulta de stock no modifica el catálogo.
 
-## 5. API pública y errores
+`consultar_destino` realiza una petición HTTP real a `https://geocoding-api.open-meteo.com/v1/search`, restringida a Bolivia y con un tiempo de espera de diez segundos. Maneja errores de conexión, tiempo de espera, estado HTTP y respuestas JSON inválidas. La clave de Groq no se envía a esta API.
 
-`consultar_destino` realiza una petición real a `https://geocoding-api.open-meteo.com/v1/search`, con `name` igual a la ciudad, `count=5`, `language=es`, `countryCode=BO` y `timeout=10` segundos. No envía la clave de Groq a esta API.
+Los errores de las funciones se devuelven en el campo `mensaje` con un texto que empieza por `ERROR:`, por ejemplo:
 
-La herramienta comprueba el estado HTTP y valida que el JSON sea un objeto, que `results` sea una lista cuando esté presente y que las localidades tengan nombres válidos. También valida `admin1` cuando aparece. La ausencia de `results` se interpreta como una lista vacía.
-
-Ejemplos del contrato, no ejecuciones adicionales:
-
-```json
-{"disponible": false, "mensaje": "ERROR: Producto inexistente"}
+```text
+ERROR: Producto inexistente
+ERROR: La cantidad debe ser un entero positivo
+ERROR: No se pudo conectar con Open-Meteo
 ```
 
-```json
-{"encontrado": false, "mensaje": "ERROR: Open-Meteo devolvió un error HTTP"}
-```
+Los errores de validación del decorador también pueden devolver directamente un texto con ese prefijo. Una búsqueda sin coincidencias o un producto agotado son resultados normales, no errores técnicos.
 
-El prefijo `ERROR:` distingue entradas inválidas y fallos técnicos de respuestas normales como producto agotado o búsqueda vacía. El agente tiene instrucciones para explicar esos errores sin inventar datos. Open-Meteo proporciona coincidencias geográficas; no proporciona cobertura comercial, tarifas ni tiempos de entrega.
+## 5. Los cinco primitivos
 
-## 6. Instalación y ejecución en Windows
+### 5.1. Instrucciones
 
-Requisitos: Windows con PowerShell, Git, Python 3.12, conexión a internet y una clave válida de Groq. Las consultas reales dependen de la disponibilidad y límites del proveedor.
+El texto `instrucciones` de [agente.py](agente.py) define el rol de asistente de ventas de ropa en Bolivia. Indica que debe responder brevemente en español, consultar las herramientas antes de afirmar datos, expresar precios en Bs y explicar los errores sin inventar resultados.
 
-```powershell
-git clone https://github.com/carito1597/upi-m3-agente-ventas-inventario.git
-cd upi-m3-agente-ventas-inventario
-py -3.12 --version
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env
-notepad .env
-```
+También delimita las operaciones permitidas: consultar el catálogo, la disponibilidad y las localidades. Si falta información indispensable, debe pedir aclaraciones. Estas instrucciones orientan al modelo, pero no garantizan que siempre las cumpla.
 
-En una instalación nueva, sustituir localmente el marcador de `GROQ_API_KEY` por la clave propia y guardar `.env`. Si el archivo ya existe, conservarlo en lugar de copiarlo de nuevo. `.env` está excluido mediante `.gitignore`; no debe publicarse ni mostrarse en el video.
+### 5.2. Herramientas
 
-Se utiliza directamente el Python del entorno virtual, sin necesidad de activar scripts de PowerShell. `-X utf8` fuerza UTF-8 para la salida de Python.
+Son las funciones que conectan las decisiones del modelo con datos consultables. `buscar_productos` y `consultar_stock` acceden al catálogo local; `consultar_destino` accede a una API pública real. El agente selecciona entre ellas según la pregunta y los resultados anteriores.
 
-```powershell
-# Consulta predeterminada
-.\.venv\Scripts\python.exe -B -X utf8 agente.py
+### 5.3. Memoria
 
-# Consulta personalizada: pasar el texto entre comillas
-.\.venv\Scripts\python.exe -B -X utf8 agente.py "Busca un vestido rojo talla M y verifica si hay 2 unidades disponibles."
+La memoria es **temporal y limitada a una invocación**: el historial de mensajes permite que el modelo utilice los resultados de una herramienta al decidir su siguiente acción.
 
-# Evaluación real: muestra el detalle y la tabla en terminal
-.\.venv\Scripts\python.exe -B -X utf8 pruebas.py
-```
+No hay memoria persistente, base de conversaciones ni checkpointer configurado. Al ejecutar de nuevo `python agente.py`, el agente no recuerda las consultas anteriores. Una aclaración posterior necesitaría una aplicación que conservara y reenviara el historial.
 
-`agente.py` muestra `CONSULTA` y `RESPUESTA`. `pruebas.py` guarda automáticamente el informe en UTF-8, reemplazando [resultados_pruebas.txt](resultados_pruebas.txt). Cada ejecución de pruebas usa el agente real y puede consumir cuota de Groq. Importar `pruebas.py` no ejecuta las consultas.
+### 5.4. Estado
 
-## 7. Control de ejecución y reproducción
+El estado representa la situación actual de la ejecución. Incluye la pregunta del usuario, los mensajes del modelo, las llamadas propuestas a herramientas y sus resultados.
 
-La configuración actual es:
+En el flujo se intercambian mensajes del usuario, `AIMessage` con decisiones o respuestas, y `ToolMessage` con resultados asociados a sus llamadas. El middleware también mantiene contadores de llamadas. Este estado permite continuar el proceso; no modifica las existencias del catálogo.
+
+La memoria se refiere al contexto que el agente conserva durante la consulta; el estado es la estructura que contiene ese contexto y la información de ejecución en cada paso.
+
+### 5.5. Control
+
+Se utiliza `ModelCallLimitMiddleware` para limitar las llamadas al modelo:
 
 ```python
 ModelCallLimitMiddleware(
@@ -121,121 +111,139 @@ ModelCallLimitMiddleware(
 )
 ```
 
-El límite predeterminado es **5 llamadas al modelo por invocación**, configurable con `MODEL_RUN_LIMIT`. No es un límite de cinco herramientas ni un presupuesto total de tiempo; los reintentos del cliente son otra configuración. `recursion_limit=15` limita los pasos del grafo y tampoco equivale al número de llamadas al modelo.
+El límite predeterminado es de **cinco llamadas al modelo por consulta**. Si intenta superarlo, el middleware termina la ejecución con un mensaje de límite alcanzado. Además, `recursion_limit=15` limita los pasos del flujo; no equivale al número de llamadas al modelo. Los reintentos del cliente de Groq se configuran por separado.
 
-Reproducción desde la carpeta del proyecto, conservando el valor previo de la variable:
+No se utiliza aprobación humana porque las herramientas actuales solo leen datos. Tendría sentido incorporarla antes de acciones con consecuencias, como registrar una venta, descontar inventario o procesar un pago. La demostración del control elegido se explica en la sección 7.
+
+## 6. Instalación y uso en Windows
+
+Requisitos: Python 3.12, PowerShell, conexión a internet y una clave válida de Groq.
+
+Desde la carpeta del proyecto:
 
 ```powershell
-$consulta = "Busca un vestido rojo talla M y verifica si hay 2 unidades disponibles."
-$limiteAnterior = $env:MODEL_RUN_LIMIT
-try {
-    $env:MODEL_RUN_LIMIT = "1"
-    .\.venv\Scripts\python.exe -B -X utf8 agente.py $consulta
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
-    $env:MODEL_RUN_LIMIT = "5"
-    .\.venv\Scripts\python.exe -B -X utf8 agente.py $consulta
-} finally {
-    if ($null -eq $limiteAnterior) {
-        Remove-Item Env:MODEL_RUN_LIMIT -ErrorAction SilentlyContinue
-    } else {
-        $env:MODEL_RUN_LIMIT = $limiteAnterior
-    }
+En una instalación nueva, copia `.env.example` a `.env` y configura `GROQ_API_KEY`. Si `.env` ya existe, conserva su contenido. Este archivo está excluido mediante `.gitignore`: no debe subirse al repositorio ni mostrarse durante una presentación.
+
+Con el entorno virtual activo:
+
+```powershell
+python agente.py "¿Tienen blusas negras talla M?"
+```
+
+Sin activar el entorno, puedes usar directamente su intérprete:
+
+```powershell
+.\.venv\Scripts\python.exe -B -X utf8 agente.py "¿Tienen blusas negras talla M?"
+```
+
+La terminal muestra `CONSULTA` y `RESPUESTA`. Si se ejecuta `python agente.py` sin una pregunta, utiliza la consulta predeterminada del vestido rojo talla M para dos unidades. Cada ejecución real utiliza Groq y puede consumir créditos o cuota.
+
+## 7. Control elegido y cómo comprobarlo
+
+Elegimos un **límite de llamadas al modelo** porque el agente decide cuántas consultas necesita antes de responder. Este control evita que continúe indefinidamente y acota el número de llamadas por ejecución; no es un presupuesto exacto de dinero ni de tiempo.
+
+No elegimos aprobación humana porque las herramientas actuales solo consultan información. Pedir permiso para leer el stock añadiría un paso innecesario. La aprobación tendría sentido si el agente pudiera registrar ventas, descontar inventario o procesar pagos.
+
+`ModelCallLimitMiddleware` permite cinco llamadas al modelo por consulta de forma predeterminada. Para comprobar que actúa, ejecuta **la misma pregunta con dos límites diferentes**, desde PowerShell y con el entorno virtual activo.
+
+### 1. Comprobar la detención con límite 1
+
+```powershell
+$limiteAnterior = $env:MODEL_RUN_LIMIT
+$env:MODEL_RUN_LIMIT = "1"
+python agente.py "Busca un vestido rojo talla M y verifica si hay 2 unidades disponibles."
+```
+
+La consulta necesita continuar después de la primera llamada. El middleware impide hacerlo y muestra:
+
+```text
+RESPUESTA: Model call limits exceeded: run limit (1/1)
+```
+
+**Este mensaje demuestra que el control intervino.** No es un fallo inesperado: se alcanzó el límite configurado. Esta detención se observó en la comprobación manual del proyecto.
+
+### 2. Comprobar la respuesta con límite 5
+
+```powershell
+$env:MODEL_RUN_LIMIT = "5"
+python agente.py "Busca un vestido rojo talla M y verifica si hay 2 unidades disponibles."
+```
+
+Con más llamadas disponibles, el agente puede completar la consulta. En la comprobación manual confirmó que había **3 unidades**, suficientes para las **2 solicitadas**. La redacción puede variar.
+
+La comparación permite comprobar el control: **con límite 1 se detiene; con límite 5 completa la respuesta**. Si una nueva ejecución no muestra ese comportamiento, revisa la salida antes de considerar demostrada la prueba.
+
+### 3. Restaurar la configuración anterior
+
+Al terminar, ejecuta en la misma terminal:
+
+```powershell
+if ($null -eq $limiteAnterior) {
+    Remove-Item Env:MODEL_RUN_LIMIT -ErrorAction SilentlyContinue
+} else {
+    $env:MODEL_RUN_LIMIT = $limiteAnterior
 }
 ```
 
-La evidencia real conservada en [evidencia_control.txt](evidencia_control.txt) muestra:
+## 8. Evaluación de cinco casos
 
-| Configuración | Llamadas a herramientas observadas | Salida real |
-|---|---|---|
-| `MODEL_RUN_LIMIT=1` | `buscar_productos`. | `Model call limits exceeded: run limit (1/1)`; el middleware impidió continuar con otra llamada al modelo. |
-| `MODEL_RUN_LIMIT=5` | `buscar_productos` y `consultar_stock`. | Confirmó 3 unidades del vestido rojo M y disponibilidad para 2. |
+[casos.json](casos.json) contiene las preguntas y sus criterios. [pruebas.py](pruebas.py) las envía al agente real, observa las llamadas y calcula el resultado automáticamente.
 
-Con `exit_behavior="end"`, el límite finaliza con un mensaje y ambas ejecuciones registradas devolvieron código de salida 0. El campo exploratorio `LLAMADAS AL MODELO: None` del archivo indica que el contador no estaba expuesto en el resultado, no que hubo cero llamadas. La detención se acredita con el mensaje real del middleware y las herramientas registradas.
-
-Los comandos anteriores muestran las nuevas salidas en terminal; no regeneran automáticamente `evidencia_control.txt`. Ese archivo conserva la demostración realizada.
-
-## 8. Evaluación automática de diez casos
-
-Cada caso de [pruebas.py](pruebas.py) define una consulta, `debe_usar` (herramientas obligatorias), `no_debe_usar` (herramientas prohibidas) y `esperado` (condición verificable sobre argumentos y resultados).
-
-Las consultas se ejecutan mediante `agente.invoke()`. Las llamadas de `AIMessage` se relacionan con sus `ToolMessage` mediante el identificador de llamada; se registran argumentos, resultados reales y respuesta final. Se evalúan por separado:
-
-1. **Selección:** aparecen todas las herramientas obligatorias y ninguna prohibida. Otras herramientas no prohibidas pueden utilizarse.
-2. **Resultado esperado:** al menos una llamada de la herramienta pertinente cumple la condición definida. Según el caso se contrastan argumentos, datos completos del producto con el catálogo, existencias, disponibilidad, errores esperados o localidades. También se comprueba que exista una respuesta final no vacía del agente.
-3. **General:** requiere selección y resultado esperado correctos. Una herramienta correcta por sí sola no basta.
-
-Los estados son `OK`, `FALLO` y `NO VERIFICABLE`. La falta de una herramienta obligatoria o un resultado contrario al esperado produce un fallo. Una excepción de ejecución, un resultado no interpretable o un error técnico que impide comprobar la condición se informa como no verificable, con su motivo, y se continúa con los demás casos. En los casos de ID inexistente y cantidad cero, el error de entrada es precisamente el resultado esperado.
-
-### Resultados registrados
-
-Fuente exclusiva: [resultados_pruebas.txt](resultados_pruebas.txt), ejecución identificada como `2026-11-14T10:06:02.148097+00:00`. La siguiente tabla resume sus diez casos, no nuevas ejecuciones:
-
-| Caso | Consulta resumida y condición comprobada | Selección | Resultado esperado | General |
-|---|---|---|---|---|
-| 1 | Blusa negra M: `ROP001` con sus datos del catálogo. | OK | OK | OK |
-| 2 | Vestido rojo M: `ROP004`, cantidad 2, stock 3 y disponible. | OK | OK | OK |
-| 3 | Cochabamba: coincidencia geográfica devuelta por la API. | OK | OK | OK |
-| 4 | Chaqueta denim S: `ROP005`, stock 0. | OK | OK | OK |
-| 5 | Zapatos deportivos M: búsqueda correspondiente sin productos. | OK | OK | OK |
-| 6 | Camiseta básica blanca XS: `ROP006` con sus datos del catálogo. | OK | OK | OK |
-| 7 | `ROP004`, cantidad 10: stock 3 y disponibilidad falsa. | OK | OK | OK |
-| 8 | `ROP999`: disponibilidad falsa y error de producto inexistente. | OK | OK | OK |
-| 9 | `ROP004`, cantidad 0: disponibilidad falsa y error de cantidad. | OK | OK | OK |
-| 10 | `ZzxqvInventada987654`: sin localidad encontrada y lista vacía. | OK | OK | OK |
-
-Para cada dimensión, `porcentaje = casos OK / total de casos ejecutados × 100`. El denominador incluye los diez casos; los no verificables no cuentan como aciertos.
-
-| Dimensión | Cumplimiento registrado | Fallos | No verificables |
+| Caso | Consulta | `debe_usar` | `no_debe_usar` |
 |---|---|---|---|
-| Selección de herramientas | 10/10 = 100.0 % | 0 | 0 |
-| Resultado esperado | 10/10 = 100.0 % | 0 | 0 |
-| General | 10/10 = 100.0 % | 0 | 0 |
+| 1 | ¿Tienen blusas negras talla M? | `buscar_productos` | `consultar_destino` |
+| 2 | ¿Tienen dos vestidos rojos talla M disponibles? | `buscar_productos`, `consultar_stock` | `consultar_destino` |
+| 3 | Busca la ciudad de Cochabamba en Bolivia. | `consultar_destino` | `buscar_productos`, `consultar_stock` |
+| 4 | ¿Tienen zapatos deportivos talla M? | `buscar_productos` | `consultar_destino` |
+| 5 | Consulta si hay una unidad del producto ROP999. | `consultar_stock` | `consultar_destino` |
 
-El programa devuelve código 0 si todos los casos son `OK`, y 1 en otro caso. Estos resultados corresponden a la ejecución guardada; no garantizan que futuras ejecuciones produzcan lo mismo.
+Un caso aprueba cuando ejecuta todas las herramientas obligatorias, no solicita ninguna prohibida y produce una respuesta final sin errores inesperados. Las herramientas ausentes de ambas listas son opcionales. La ejecución se comprueba mediante la llamada del modelo y el resultado asociado de la herramienta.
 
-**Alcance de la evaluación:** valida selección y resultados de herramientas, no la exactitud semántica integral del texto final. En el caso 3, la API devolvió varias localidades llamadas Cochabamba y el agente respondió sin pedir aclaración; el caso pasó porque su condición comprobaba la coincidencia geográfica. Esta limitación no queda cubierta por el 100 % registrado.
+El caso 5 exige `ERROR: Producto inexistente` para `ROP999`, cantidad 1, y una respuesta que explique que el producto no existe. **El error esperado puede aprobar:** lo que se evalúa es su manejo correcto. Un error técnico inesperado o una ejecución incompleta cuentan como fallo.
 
-## 9. Archivos y evidencias
+Para revisar las preguntas sin consumir API:
 
-| Archivo | Función |
+```powershell
+python pruebas.py --ver-casos
+```
+
+Para ejecutar los cinco casos:
+
+```powershell
+python pruebas.py
+```
+
+El programa solicita confirmación antes del consumo de Groq. Cada caso muestra pregunta, respuesta, tabla de herramientas con `debe_usar`, `no_debe_usar` u `opcional`, y resultado. El resumen distingue el tipo de caso, muestra el error realmente recibido y calcula:
+
+```text
+Cumplimiento = casos aprobados / 5 × 100
+```
+
+Para observar también argumentos y resultados completos de herramientas:
+
+```powershell
+python pruebas.py --detalle
+```
+
+La ejecución manual compartida el **16 de noviembre de 2026**, iniciada a las **15:49:44 UTC**, obtuvo **5 aprobados de 5: 100 %**, incluido el error esperado. Este dato corresponde a esa ejecución, no garantiza resultados futuros. El formato del resumen se mejoró posteriormente para destacar el caso de error; esa mejora no representa otra ejecución real.
+
+El porcentaje mide selección de herramientas, finalización técnica y las comprobaciones específicas del error esperado. No valida exhaustivamente todas las respuestas; la comprobación del texto del error es heurística. Por ejemplo, una consulta geográfica puede aprobar por usar la herramienta aunque la respuesta no aclare cuál de varias localidades encontradas interesa.
+
+La evaluación solo muestra resultados en terminal: no crea informes, carpetas ni modifica este README. Para presentarla, conserva una captura o grabación de la ejecución completa. El programa devuelve código 0 si todos los casos aprueban y 1 si hay fallos.
+
+## 9. Archivos del proyecto
+
+| Archivo | Propósito |
 |---|---|
-| [agente.py](agente.py) | Modelo, prompt, herramientas, middleware y entrada por terminal. |
-| [catalogo.py](catalogo.py) | Quince productos simulados con precios en Bs y existencias. |
-| [herramientas.py](herramientas.py) | Tres herramientas, normalización y manejo de errores. |
-| [pruebas.py](pruebas.py) | Diez consultas reales y evaluación automática. |
-| [resultados_pruebas.txt](resultados_pruebas.txt) | Registro UTF-8 de consultas, llamadas, argumentos, resultados, respuestas y porcentajes. |
-| [evidencia_control.txt](evidencia_control.txt) | Demostración real con límites 1 y 5 y comandos de reproducción. |
-| [requirements.txt](requirements.txt) | Dependencias con versiones fijadas. |
+| [agente.py](agente.py) | Modelo, instrucciones, herramientas registradas, límite de llamadas y entrada por terminal. |
+| [herramientas.py](herramientas.py) | Tres herramientas y manejo de errores. |
+| [catalogo.py](catalogo.py) | Catálogo simulado de ropa con precios y existencias. |
+| [casos.json](casos.json) | Cinco preguntas con sus criterios de evaluación. |
+| [pruebas.py](pruebas.py) | Ejecución real de los casos, comparación y porcentaje en terminal. |
+| [requirements.txt](requirements.txt) | Dependencias del proyecto. |
 | [.env.example](.env.example) | Plantilla de configuración sin credenciales reales. |
-| [.gitignore](.gitignore) | Exclusión de `.env`, entorno virtual y caché de Python. |
-
-## 10. Limitaciones y posibles mejoras
-
-- El inventario es una lista simulada en memoria; no se registran ventas ni se actualiza stock.
-- No hay memoria persistente ni interfaz de conversación de varios turnos en la CLI. Una aclaración posterior requiere que una aplicación conserve y reenvíe el historial.
-- La normalización de singular/plural y colores cubre variantes sencillas, no todos los sinónimos o formas del español.
-- Las instrucciones orientan el comportamiento, pero no garantizan que el modelo siempre pida aclaraciones o evite respuestas inadecuadas. La evaluación del texto final sigue siendo limitada.
-- Groq y Open-Meteo requieren conectividad; sus fallos, cuotas y cambios de servicio pueden afectar las ejecuciones. El control de llamadas no sustituye el manejo general de errores de la CLI.
-- La geocodificación puede devolver varias localidades y no acredita servicios de envío.
-
-Como mejoras futuras, se podría ampliar la evaluación de las respuestas finales y de las aclaraciones, añadir comprobaciones locales con HTTP simulado, reforzar la validación estricta de argumentos y presentar mejor los errores de configuración y conexión. Estas mejoras no se consideran implementadas en esta versión.
-
-## 11. Video de demostración
-
-**Duración requerida: 3 a 5 minutos. Enlace: pendiente de incorporar.**
-
-La demostración deberá mostrar una consulta normal, una consulta real a Open-Meteo, un error de entrada, la detención con límite 1, el funcionamiento con límite 5 y la tabla de evaluación. No mostrar `.env` ni claves API.
-
-## 12. Cumplimiento de la rúbrica
-
-La tabla identifica evidencias disponibles y pendientes; no representa una aprobación ni una calificación otorgada.
-
-| Criterio | Puntos | Evidencia exacta en el repositorio | Estado de la evidencia |
-|---|---|---|---|
-| Agente ejecutable con salidas visibles | 30 | [agente.py](agente.py), bloque `if __name__ == "__main__"`; [resultados_pruebas.txt](resultados_pruebas.txt), líneas `Respuesta final`; [evidencia_control.txt](evidencia_control.txt), sección `MODEL_RUN_LIMIT=5`. | Código y salidas reales disponibles. |
-| README y cinco primitivas | 20 | Este README, secciones 2, 3, 4 y 6: arquitectura, diagrama, cinco primitivas, contratos y reproducción. | Documentación disponible. |
-| Herramientas con API real y errores | 15 | [herramientas.py](herramientas.py), `consultar_destino` y sus excepciones; [resultados_pruebas.txt](resultados_pruebas.txt), casos 3 y 10 (API), 8 y 9 (errores de entrada). | Código y ejecuciones reales disponibles; no se afirma que el informe cubra todos los fallos técnicos. |
-| Control funcionando | 15 | [agente.py](agente.py), `ModelCallLimitMiddleware`; [evidencia_control.txt](evidencia_control.txt), secciones `MODEL_RUN_LIMIT=1` y `MODEL_RUN_LIMIT=5`. | Detención y ejecución normal registradas. |
-| Evaluación de cinco casos ejecutada | 10 | [pruebas.py](pruebas.py), lista `casos` y `main()`; [resultados_pruebas.txt](resultados_pruebas.txt), casos 1 a 10 y tabla resumen. | Diez casos registrados, superando el mínimo de cinco. |
-| Video de 3 a 5 minutos | 10 | Sección 11 de este README: enlace pendiente. | Pendiente; no hay video referenciado como evidencia. |
-| **Total de la rúbrica** | **100** | La asignación de puntos corresponde al docente. | Sin calificación declarada. |
+| [.gitignore](.gitignore) | Exclusión de credenciales, entorno virtual y caché. |

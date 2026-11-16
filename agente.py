@@ -62,10 +62,21 @@ agente = create_agent(
         ModelCallLimitMiddleware(
             run_limit=int(os.getenv("MODEL_RUN_LIMIT", "5")),
             exit_behavior="end"
-        )
+        ),
     ]
 )
 
+
+
+def ejecutar_consulta(consulta):
+    """Consulta al agente sin pausas de aprobación para herramientas de lectura."""
+    print("\nCONSULTA:", consulta, flush=True)
+    resultado = agente.invoke(
+        {"messages": [{"role": "user", "content": consulta}]},
+        config={"recursion_limit": 15},
+    )
+    print("RESPUESTA:", resultado["messages"][-1].content)
+    return resultado
 
 
 if __name__ == "__main__":
@@ -76,11 +87,4 @@ if __name__ == "__main__":
         if len(sys.argv) > 1
         else "Busca un vestido rojo talla M y verifica si hay 2 unidades disponibles."
     )
-
-    resultado = agente.invoke(
-        {"messages": [{"role": "user", "content": consulta}]},
-        config={"recursion_limit": 15}
-    )
-
-    print("\nCONSULTA:", consulta)
-    print("RESPUESTA:", resultado["messages"][-1].content)
+    ejecutar_consulta(consulta)

@@ -1,0 +1,50 @@
+[
+  {
+    "consulta": "¿Tienen blusas negras talla M?",
+    "debe_usar": [
+      "buscar_productos"
+    ],
+    "no_debe_usar": [
+      "consultar_destino"
+    ]
+  },
+  {
+    "consulta": "¿Tienen dos vestidos rojos talla M disponibles?",
+    "debe_usar": [
+      "buscar_productos",
+      "consultar_stock"
+    ],
+    "no_debe_usar": [
+      "consultar_destino"
+    ]
+  },
+  {
+    "consulta": "Busca la ciudad de Cochabamba en Bolivia.",
+    "debe_usar": [
+      "consultar_destino"
+    ],
+    "no_debe_usar": [
+      "buscar_productos",
+      "consultar_stock"
+    ]
+  },
+  {
+    "consulta": "¿Tienen zapatos deportivos talla M?",
+    "debe_usar": [
+      "buscar_productos"
+    ],
+    "no_debe_usar": [
+      "consultar_destino"
+    ]
+  },
+  {
+    "consulta": "Consulta si hay una unidad del producto ROP999.",
+    "debe_usar": [
+      "consultar_stock"
+    ],
+    "no_debe_usar": [
+      "consultar_destino"
+    ],
+    "error_esperado": "ERROR: Producto inexistente"
+  }
+]
