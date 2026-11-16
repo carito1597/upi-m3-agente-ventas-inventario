@@ -233,85 +233,121 @@ El porcentaje mide selección de herramientas, finalización técnica y las comp
 
 La evaluación solo muestra resultados en terminal: no crea informes, carpetas ni modifica este README. Para presentarla, conserva una captura o grabación de la ejecución completa. El programa devuelve código 0 si todos los casos aprueban y 1 si hay fallos.
 
-### 8.1. Evidencias de las respuestas y la evaluación
+### 8.1. Salida real de la evaluación
 
-Las siguientes capturas mostrarán la salida real de `python pruebas.py`. Para cada caso debe verse la **pregunta, la respuesta del agente, la tabla de herramientas y el resultado**. Conserva también los casos fallidos si aparecen.
+Transcripción de la ejecución compartida del **16 de noviembre de 2026, a las 13:07:28 de Bolivia (UTC−4)**. El bloque muestra la salida de terminal de los cinco casos y su resumen, incluido el error esperado. No corresponde a una nueva ejecución.
 
-Los espacios se encuentran pendientes hasta incorporar las imágenes. Las capturas y el resumen deben corresponder a la misma ejecución; el resultado que muestran es el que se presenta como evidencia.
+```text
+python pruebas.py
+Se ejecutarán cinco consultas reales con Groq y pueden consumir créditos. ¿Continuar? [s/N]: s
+EVALUACIÓN REAL
+Cada caso inicia una consulta nueva. Se evalúan herramientas y errores esperados; no toda la calidad semántica de las respuestas.
 
-#### Caso 1. Búsqueda de blusa
+CASO 1 DE 5 · Búsqueda de blusa
+─────────────────────────────────────────────────────────────────
+Pregunta:
+¿Tienen blusas negras talla M?
 
-**Consulta:** ¿Tienen blusas negras talla M?
+Respuesta del agente:
+Sí, tenemos la **Blusa casual** en color negro, talla M.
+Stock disponible: 8 unidades.
+Precio: **Bs 50.00**.
 
-**Respuesta y resultado en terminal:**
+Herramienta             Criterio          ¿Se ejecutó?
+───────────────────────────────────────────────────────
+buscar_productos        debe_usar         Sí
+consultar_stock         opcional          Sí
+consultar_destino       no_debe_usar      No
 
-_Pendiente de incorporar la captura._
+Resultado: APROBADO
 
-<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
-![Caso 1: Búsqueda de blusa](evidencias/caso_01_blusa.png)
--->
+CASO 2 DE 5 · Disponibilidad de dos vestidos
+─────────────────────────────────────────────────────────────────
+Pregunta:
+¿Tienen dos vestidos rojos talla M disponibles?
 
-#### Caso 2. Disponibilidad de dos vestidos
+Respuesta del agente:
+Sí, tenemos el **Vestido corto** rojo talla M disponible. Hay 3 unidades en stock, por lo que podemos atender tu solicitud de 2 piezas.
 
-**Consulta:** ¿Tienen dos vestidos rojos talla M disponibles?
+Herramienta             Criterio          ¿Se ejecutó?
+───────────────────────────────────────────────────────
+buscar_productos        debe_usar         Sí
+consultar_stock         debe_usar         Sí
+consultar_destino       no_debe_usar      No
 
-**Respuesta y resultado en terminal:**
+Resultado: APROBADO
 
-_Pendiente de incorporar la captura._
+CASO 3 DE 5 · Consulta de localidad
+─────────────────────────────────────────────────────────────────
+Pregunta:
+Busca la ciudad de Cochabamba en Bolivia.
 
-<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
-![Caso 2: Disponibilidad de dos vestidos](evidencias/caso_02_vestidos.png)
--->
+Respuesta del agente:
+Cochabamba se encuentra en Bolivia. Se detectaron varias coincidencias geográficas en la base de datos de Open‑Meteo.
 
-#### Caso 3. Consulta de localidad
+Herramienta             Criterio          ¿Se ejecutó?
+───────────────────────────────────────────────────────
+buscar_productos        no_debe_usar      No
+consultar_stock         no_debe_usar      No
+consultar_destino       debe_usar         Sí
 
-**Consulta:** Busca la ciudad de Cochabamba en Bolivia.
+Resultado: APROBADO
 
-**Respuesta y resultado en terminal:**
+CASO 4 DE 5 · Búsqueda sin coincidencias
+─────────────────────────────────────────────────────────────────
+Pregunta:
+¿Tienen zapatos deportivos talla M?
 
-_Pendiente de incorporar la captura._
+Respuesta del agente:
+No encontré zapatos deportivos talla M en nuestro catálogo. ¿Te gustaría buscar otro tipo de calzado o revisar otra talla?
 
-<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
-![Caso 3: Consulta de localidad](evidencias/caso_03_localidad.png)
--->
+Herramienta             Criterio          ¿Se ejecutó?
+───────────────────────────────────────────────────────
+buscar_productos        debe_usar         Sí
+consultar_stock         opcional          No
+consultar_destino       no_debe_usar      No
 
-#### Caso 4. Búsqueda sin coincidencias
+Resultado: APROBADO
 
-**Consulta:** ¿Tienen zapatos deportivos talla M?
+CASO 5 DE 5 · Producto inexistente
+─────────────────────────────────────────────────────────────────
+Pregunta:
+Consulta si hay una unidad del producto ROP999.
 
-**Respuesta y resultado en terminal:**
+Respuesta del agente:
+El producto ROP999 no existe en nuestro catálogo. Si buscas otro artículo, avísame.
 
-_Pendiente de incorporar la captura._
+Herramienta             Criterio          ¿Se ejecutó?
+───────────────────────────────────────────────────────
+buscar_productos        opcional          No
+consultar_stock         debe_usar         Sí
+consultar_destino       no_debe_usar      No
 
-<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
-![Caso 4: Búsqueda sin coincidencias](evidencias/caso_04_sin_coincidencias.png)
--->
+Resultado: APROBADO
+El agente recibió y explicó el error esperado de producto inexistente.
 
-#### Caso 5. Error esperado: producto inexistente
+=== RESUMEN ===
+Caso     Tipo de caso                  Resultado
+───────────────────────────────────────────────────────
+1        Consulta normal               APROBADO
+2        Consulta normal               APROBADO
+3        Consulta a API pública        APROBADO
+4        Búsqueda sin coincidencias    APROBADO
+5        Error esperado                APROBADO
 
-**Consulta:** Consulta si hay una unidad del producto ROP999.
+CASO DE ERROR EVALUADO: 5
+  Pregunta: Consulta si hay una unidad del producto ROP999.
+  Error esperado: ERROR: Producto inexistente
+  Herramienta: consultar_stock
+  Argumentos: {"cantidad": 1, "producto_id": "ROP999"}
+  Error recibido: ERROR: Producto inexistente
+  Respuesta del agente: El producto ROP999 no existe en nuestro catálogo. Si buscas otro artículo, avísame.
+  Manejo del error: CORRECTO según los criterios automáticos.
 
-Incluye en la evidencia el mensaje real `ERROR: Producto inexistente` y la explicación del agente. Si ese dato solo aparece en el resumen, puede verse en la captura del apartado siguiente. Que el caso apruebe significa que manejó correctamente el error esperado.
-
-**Respuesta y resultado en terminal:**
-
-_Pendiente de incorporar la captura._
-
-<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
-![Caso 5: Error esperado: producto inexistente](evidencias/caso_05_error.png)
--->
-
-#### Resumen de los cinco casos
-
-La captura debe mostrar la tabla con **caso, tipo de caso y resultado**, el apartado **CASO DE ERROR EVALUADO**, y el **total de aprobados, fallidos y porcentaje calculado**. Si no cabe de forma legible en una imagen, utiliza dos capturas consecutivas.
-
-**Resumen y porcentaje en terminal:**
-
-_Pendiente de incorporar la captura._
-
-<!-- Reemplazar el texto pendiente por la imagen subida. Si usas archivos locales en el repositorio:
-![Resumen de la evaluación y manejo del error esperado](evidencias/resumen_evaluacion.png)
--->
+Aprobados: 5/5 | Fallidos: 0
+Cumplimiento: 5 / 5 × 100 = 100.0 %
+APROBADO significa que cumplió los criterios; un error esperado bien manejado también aprueba.
+```
 
 ## 9. Archivos del proyecto
 
